@@ -33,7 +33,7 @@ MAX_WORKERS = 6                       # parallel requests so we finish inside th
 # re-enables a SMALL reasoning budget for just those categories, as a
 # targeted rescue, instead of turning thinking back on everywhere.
 # ------------------------------------------------------------
-REASONING_ENABLED_FOR = set()          # e.g. {"math", "logic"} — empty = thinking OFF for everything
+REASONING_ENABLED_FOR = {"math"}          # e.g. {"math", "logic"} — empty = thinking OFF for everything
 FALLBACK_THINKING_BUDGET = 512         # small budget, only used for categories listed above
 
 # Generous-but-not-wasteful output ceilings per category. These are safety
