@@ -33,21 +33,21 @@ MAX_WORKERS = 6                       # parallel requests so we finish inside th
 # re-enables a SMALL reasoning budget for just those categories, as a
 # targeted rescue, instead of turning thinking back on everywhere.
 # ------------------------------------------------------------
-REASONING_ENABLED_FOR = {"math"}          # e.g. {"math", "logic"} — empty = thinking OFF for everything
+REASONING_ENABLED_FOR = set()          # e.g. {"math", "logic"} — empty = thinking OFF for everything
 FALLBACK_THINKING_BUDGET = 512         # small budget, only used for categories listed above
 
 # Generous-but-not-wasteful output ceilings per category. These are safety
 # ceilings, not targets — raising max_tokens does NOT use more tokens by
 # itself, it only prevents truncation/errors on longer answers (code_gen).
 MAX_TOKENS_BY_KEY = {
-    "factual": 200,
-    "math": 150,
-    "sentiment": 200,
-    "summarization": 300,
-    "ner": 250,
-    "code_debug": 500,
-    "logic": 200,
-    "code_gen": 700,
+    "factual": 100,
+    "math": 60,
+    "sentiment": 60,
+    "summarization": 220,
+    "ner": 180,
+    "code_debug": 400,
+    "logic": 90,
+    "code_gen": 550,
 }
 
 BASE_RULE = (
