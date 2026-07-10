@@ -21,8 +21,34 @@ OUTPUT_PATH = os.path.join(OUTPUT_DIR, "results.json")
 LOCAL_FALLBACK_INPUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_tasks.json")
 
 REQUEST_TIMEOUT_SECONDS = 25          # must stay under the 30s per-request rule
-HARD_THINKING_BUDGET = 1024           # minimum allowed budget_tokens; keeps hard tasks fast
 MAX_WORKERS = 6                       # parallel requests so we finish inside the 10-minute limit
+
+# ------------------------------------------------------------
+# TOKEN-MINIMIZATION MODE
+# Thinking is OFF for every category by default — this was the single
+# biggest token cost (was eating 1000+ tokens per hard task alone).
+#
+# If accuracy ever drops below your floor, put ONLY the struggling
+# category name(s) in here, e.g. {"math"} or {"math", "logic"} — this
+# re-enables a SMALL reasoning budget for just those categories, as a
+# targeted rescue, instead of turning thinking back on everywhere.
+# ------------------------------------------------------------
+REASONING_ENABLED_FOR = set()          # e.g. {"math", "logic"} — empty = thinking OFF for everything
+FALLBACK_THINKING_BUDGET = 512         # small budget, only used for categories listed above
+
+# Generous-but-not-wasteful output ceilings per category. These are safety
+# ceilings, not targets — raising max_tokens does NOT use more tokens by
+# itself, it only prevents truncation/errors on longer answers (code_gen).
+MAX_TOKENS_BY_KEY = {
+    "factual": 200,
+    "math": 150,
+    "sentiment": 200,
+    "summarization": 300,
+    "ner": 250,
+    "code_debug": 500,
+    "logic": 200,
+    "code_gen": 700,
+}
 
 BASE_RULE = (
     "You are a precision answer engine. Respond only in English. Give the correct "
@@ -41,8 +67,6 @@ CATEGORY_PROMPTS = {
     "logic": "Output ONLY the final answer that satisfies all constraints. Fewest words.",
     "code_gen": "Output ONLY the working function in one code block. No comments, no docstrings.",
 }
-
-HARD_CATEGORIES = ["math", "logic", "deduct", "debug", "generat", "code"]
 
 # Preference order for picking a model out of whatever ALLOWED_MODELS contains.
 # 'thinking' control is only applied when the chosen model is MiniMax M3 —
@@ -105,13 +129,6 @@ def classify(task):
     return BASE_RULE + " " + CATEGORY_PROMPTS[key], key
 
 
-def needs_reasoning(category_field, key):
-    cat = str(category_field).lower()
-    if any(k in cat for k in HARD_CATEGORIES):
-        return True
-    return key in ("math", "logic", "code_debug", "code_gen")
-
-
 def extract_answer(data):
     msg = data["choices"][0]["message"]
     content = (msg.get("content") or "").strip()
@@ -143,7 +160,9 @@ def process_task(task, chat_url, headers, model_name, is_minimax):
     task_id = task.get("task_id", task.get("id", "unknown"))
     prompt = task.get("prompt", "")
     system_prompt, key = classify(task)
-    hard = needs_reasoning(task.get("category", ""), key)
+
+    rescue = key in REASONING_ENABLED_FOR   # True only for categories you explicitly listed
+    base_ceiling = MAX_TOKENS_BY_KEY.get(key, 300)
 
     payload = {
         "model": model_name,
@@ -153,15 +172,15 @@ def process_task(task, chat_url, headers, model_name, is_minimax):
         ],
         "temperature": 0.0,
         "top_p": 1,
-        "max_tokens": (HARD_THINKING_BUDGET + 400) if hard else 300,
+        "max_tokens": (FALLBACK_THINKING_BUDGET + base_ceiling) if rescue else base_ceiling,
     }
 
     # 'thinking' control only exists for MiniMax M3 - sending it to any
     # other model causes an "unsupported parameter" error.
     if is_minimax:
         payload["thinking"] = (
-            {"type": "enabled", "budget_tokens": HARD_THINKING_BUDGET}
-            if hard else {"type": "disabled"}
+            {"type": "enabled", "budget_tokens": FALLBACK_THINKING_BUDGET}
+            if rescue else {"type": "disabled"}
         )
 
     tokens_used = 0
@@ -172,7 +191,7 @@ def process_task(task, chat_url, headers, model_name, is_minimax):
             data = resp.json()
             answer = extract_answer(data)
             tokens_used = data.get("usage", {}).get("total_tokens", 0)
-            tag = "HARD" if hard else "easy"
+            tag = "RESCUE" if rescue else key
             print(f"Task {task_id} OK [{tag}] tokens={tokens_used}", file=sys.stderr)
         else:
             print(f"Task {task_id} HTTP {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
